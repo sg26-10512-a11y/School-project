@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>배롱나무 100일 피우기</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        /* 기본 폰트 및 터치 최적화 */
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+            overflow: hidden;
+            background: linear-gradient(180deg, #87CEEB 0%, #E0F6FF 65%, #8FBC8F 65%, #556B2F 100%);
+        }
+
+        /* 캔버스 스타일 */
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        /* 게임 버튼 스타일링 (입체감 및 애니메이션) */
+        .game-btn {
+            transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 4px 0 rgba(0, 0, 0, 0.2);
+        }
+        .game-btn:active:not(:disabled) {
+            transform: translateY(3px);
+            box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
+        }
+        .game-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            filter: grayscale(80%);
+        }
+
+        /* 둥둥 떠다니는 텍스트 애니메이션 */
+        @keyframes floatUp {
+            0% { opacity: 1; transform: translateY(0) scale(1); }
+            100% { opacity: 0; transform: translateY(-40px) scale(1.2); }
+        }
+        .floating-text {
+            position: absolute;
+            pointer-events: none;
+            animation: floatUp 0.8s ease-out forwards;
+            font-weight: 900;
+            text-shadow: 1px 1px 2px rgba(255, 255, 255, 0.8);
+        }
+
+        /* 모달 애니메이션 */
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .modal-content {
+            animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards;
+        }
+    </style>
+</head>
+<body class="w-screen h-screen flex flex-col justify-between items-center relative">
+
+    <!-- 상단 상태 표시바 (HUD) -->
+    <header class="w-full max-w-2xl px-4 pt-3 pb-2 z-10 flex flex-col gap-2">
+        <div class="bg-white/85 backdrop-blur-md rounded-2xl p-3 shadow-lg border border-pink-100 flex justify-between items-center">
+            <!-- 개화 일수 표시 -->
+            <div class="flex items-center gap-2">
+                <span class="text-2xl">🌸</span>
+                <div>
+                    <div class="text-xs text-gray-500 font-bold">개화 기간 (목표: 100일)</div>
+                    <div class="text-xl sm:text-2xl font-black text-pink-600">
+                        <span id="dayCount">0</span> <span class="text-sm font-bold text-gray-600">/ 100일</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 정성(포인트) 표시 -->
+            <div class="flex items-center gap-2 text-right">
+                <div>
+                    <div class="text-xs text-gray-500 font-bold">모은 정성</div>
+                    <div class="text-xl sm:text-2xl font-black text-amber-600">
+                        <span id="energyCount">0</span> <span class="text-sm">✨</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 100일 진행도 게이지 바 -->
+        <div class="w-full bg-white/70 rounded-full h-4 p-0.5 shadow-inner overflow-hidden border border-pink-200">
+            <div id="progressBar" class="bg-gradient-to-r from-pink-400 via-rose-500 to-red-500 h-full rounded-full transition-all duration-300" style="width: 0%;"></div>
+        </div>
+    </header>
+
+    <!-- 중앙 게임 캔버스 영역 -->
+    <main id="canvasContainer" class="relative flex-1 w-full max-w-2xl flex justify-center items-center overflow-hidden">
+        <canvas id="gameCanvas"></canvas>
+        
+        <!-- 힌트 배지 -->
+        <div id="hintBadge" class="absolute top-2 bg-black/40 text-white text-xs sm:text-sm px-4 py-1.5 rounded-full backdrop-blur-sm pointer-events-none transition-opacity duration-500">
+            나무를 터치(클릭)해서 꽃을 피워주세요! 🌸
+        </div>
+    </main>
+
+    <!-- 하단 컨트롤 버튼 영역 -->
+    <footer class="w-full max-w-2xl px-4 pb-5 pt-2 z-10">
+        <div class="grid grid-cols-3 gap-2 sm:gap-4">
+            <!-- 1. 물주기 버튼 -->
+            <button id="btnWater" onclick="useSkill('water')" class="game-btn bg-gradient-to-b from-sky-400 to-blue-600 text-white rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center border-2 border-sky-300">
+                <span class="text-xl sm:text-2xl mb-0.5">💧</span>
+                <span class="font-bold text-xs sm:text-sm">시원한 물주기</span>
+                <span class="text-[11px] sm:text-xs bg-blue-800/50 px-2 py-0.5 rounded-full mt-1">정성 <span id="costWater">15</span></span>
+            </button>
+
+            <!-- 2. 햇빛 쬐기 (자동 정성 증가) -->
+            <button id="btnSun" onclick="useSkill('sun')" class="game-btn bg-gradient-to-b from-amber-400 to-orange-500 text-white rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center border-2 border-amber-200">
+                <span class="text-xl sm:text-2xl mb-0.5">☀️</span>
+                <span class="font-bold text-xs sm:text-sm">따스한 햇빛 Lv.<span id="sunLevel">0</span></span>
+                <span class="text-[11px] sm:text-xs bg-orange-800/50 px-2 py-0.5 rounded-full mt-1">정성 <span id="costSun">30</span></span>
+            </button>
+
+            <!-- 3. 배롱나무 도감 버튼 -->
+            <button onclick="toggleModal('infoModal', true)" class="game-btn bg-gradient-to-b from-emerald-500 to-teal-700 text-white rounded-2xl p-2.5 sm:p-3 flex flex-col items-center justify-center border-2 border-emerald-300">
+                <span class="text-xl sm:text-2xl mb-0.5">📖</span>
+                <span class="font-bold text-xs sm:text-sm">배롱나무 이야기</span>
+                <span class="text-[11px] sm:text-xs bg-teal-900/50 px-2 py-0.5 rounded-full mt-1">지식 상식</span>
+            </button>
+        </div>
+    </footer>
+
+    <!-- 배롱나무 지식 도감 모달 -->
+    <div id="infoModal" class="hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+        <div class="modal-content bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border-4 border-pink-200 relative">
+            <h2 class="text-2xl font-black text-pink-600 mb-3 flex items-center gap-2">
+                <span>🌳</span> 배롱나무(목백일홍)란?
+            </h2>
+            <div class="space-y-3 text-gray-700 text-sm sm:text-base leading-relaxed">
+                <p class="bg-pink-50 p-3 rounded-xl border border-pink-100">
+                    <strong class="text-pink-700">1. 왜 '백일홍'일까요?</strong><br>
+                    한 송이가 100일 동안 피어있는 것이 아니라, 수많은 꽃봉오리가 <strong>7월부터 9월까지 약 100일 동안 번갈아 가며 피고 지기</strong> 때문에 나무 전체가 붉게 물들어 있습니다.
+                </p>
+                <p class="bg-amber-50 p-3 rounded-xl border border-amber-100">
+                    <strong class="text-amber-700">2. 간지럼을 타는 나무!</strong><br>
+                    껍질이 매끄럽고 얇아 손톱으로 줄기를 긁으면 나무 전체가 간지럼을 타듯 파르르 떨린다고 해서 <strong>'간지럼나무'</strong>라고도 불립니다. (게임에서도 나무를 클릭하면 흔들려요!)
+                </p>
+                <p class="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                    <strong class="text-emerald-700">3. 선비의 절개와 꽃말</strong><br>
+                    껍질을 벗은 듯 매끈한 줄기가 청렴한 선비를 닮아 서원이나 정자에 많이 심었습니다. 꽃말은 <strong>'떠난 벗을 그리워함', '부귀'</strong>입니다.
+                </p>
+            </div>
+            <button onclick="toggleModal('infoModal', false)" class="mt-5 w-full game-btn bg-pink-500 hover:bg-pink-600 text-white font-bold py-3 rounded-xl text-base">
+                닫고 계속 키우기
+            </button>
+        </div>
+    </div>
+
+    <!-- 100일 달성 클리어 모달 -->
+    <div id="clearModal" class="hidden fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+        <div class="modal-content bg-gradient-to-b from-white to-pink-50 rounded-3xl max-w-md w-full p-6 text-center shadow-2xl border-4 border-pink-400">
+            <div class="text-5xl mb-2">🎉🌸🎊</div>
+            <h2 class="text-2xl sm:text-3xl font-black text-pink-600 mb-2">100일 만개 달성!</h2>
+            <p class="text-gray-600 text-sm sm:text-base mb-4">
+                당신의 따뜻한 정성으로 배롱나무가<br>
+                <strong>100일 동안 붉고 아름다운 꽃</strong>을 피워냈습니다!
+            </p>
+            <div class="bg-white p-4 rounded-2xl shadow-inner border border-pink-100 mb-5 text-sm text-gray-700">
+                <div>⏱️ 걸린 시간: <span id="clearTime" class="font-bold text-pink-600">0</span>초</div>
+                <div>👆 총 터치(간지럽히기) 횟수: <span id="clearClicks" class="font-bold text-amber-600">0</span>회</div>
+            </div>
+            <div class="flex flex-col gap-2">
+                <button onclick="resetGame()" class="w-full game-btn bg-gradient-to-r from-pink-500 to-rose-600 text-white font-bold py-3.5 rounded-xl text-base shadow-lg">
+                    새 배롱나무 심기 (다시 하기)
+                </button>
+                <button onclick="toggleModal('clearModal', false)" class="w-full bg-gray-200 hover:bg-gray-300 text-gray-700 font-bold py-2.5 rounded-xl text-sm">
+                    만개한 나무 계속 감상하기
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * 배롱나무 100일 피우기 게임 로직
+         */
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const container = document.getElementById('canvasContainer');
+
+        // 게임 상태 변수
+        let state = {
+            days: 0,              // 현재 개화 일수 (0 ~ 100)
+            dayProgress: 0,       // 다음 일수까지 필요한 게이지 (0 ~ 100)
+            energy: 10,           // 정성 포인트 (아이템 구매용)
+            sunLevel: 0,          // 햇빛 업그레이드 레벨 (초당 자동 성장)
+            costWater: 15,        // 물주기 비용
+            costSun: 30,          // 햇빛 비용
+            totalClicks: 0,       // 총 클릭 수
+            startTime: Date.now(),// 시작 시간
+            isCleared: false,     // 100일 달성 여부
+            treeShake: 0,         // 나무 흔들림 강도 (간지럼 효과)
+            windOffset: 0         // 바람 애니메이션 오프셋
+        };
+
+        // 시각 효과 파티클 배열
+        let flowers = [];         // 나무에 피어나는 꽃송이 데이터
+        let fallingPetals = [];   // 흩날리는 꽃잎 파티클
+        let waterDrops = [];      // 물방울 파티클
+        let clouds = [            // 배경 구름
+            { x: 50, y: 60, scale: 0.8, speed: 0.2 },
+            { x: 250, y: 100, scale: 1.1, speed: 0.15 },
+            { x: 450, y: 50, scale: 0.7, speed: 0.25 }
+        ];
+
+        // 나무 가지 끝 좌표 (꽃이 피어날 위치들, 비율 기반)
+        const branchTips = [
+            { rx: 0, ry: -0.52 },
+            { rx: -0.18, ry: -0.46 },
+            { rx: 0.19, ry: -0.45 },
+            { rx: -0.28, ry: -0.35 },
+            { rx: 0.27, ry: -0.34 },
+            { rx: -0.10, ry: -0.40 },
+            { rx: 0.11, ry: -0.39 },
+            { rx: -0.22, ry: -0.26 },
+            { rx: 0.21, ry: -0.25 },
+            { rx: 0, ry: -0.33 }
+        ];
+
+        // 초기화 및 꽃 데이터 생성
+        function initFlowers() {
+            flowers = [];
+            // 총 100송이의 꽃 위치를 미리 생성 (1일 = 1송이 만개 개념)
+            for (let i = 0; i < 100; i++) {
+                const branch = branchTips[i % branchTips.length];
+                const angle = Math.random() * Math.PI * 2;
+                const radius = Math.random() * 0.085;
+                
+                // 배롱나무 특유의 진분홍 ~ 연분홍 색상 팔레트
+                const colors = ['#FF1493', '#FF69B4', '#DB2777', '#F43F5E', '#FB7185', '#E11D48'];
+                const color = colors[Math.floor(Math.random() * colors.length)];
+
+                flowers.push({
+                    rx: branch.rx + Math.cos(angle) * radius,
+                    ry: branch.ry + Math.sin(angle) * (radius * 0.8),
+                    size: 10 + Math.random() * 8,
+                    color: color,
+                    bloomScale: 0, // 0(봉오리) -> 1(만개)
+                    phase: Math.random() * Math.PI * 2
+                });
+            }
+        }
+
+        // 반응형 캔버스 리사이즈
+        function resizeCanvas() {
+            const rect = container.getBoundingClientRect();
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+            ctx.scale(dpr, dpr);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+
+        // UI 업데이트 함수
+        function updateUI() {
+            document.getElementById('dayCount').innerText = Math.floor(state.days);
+            document.getElementById('energyCount').innerText = Math.floor(state.energy);
+            document.getElementById('sunLevel').innerText = state.sunLevel;
+            document.getElementById('costWater').innerText = state.costWater;
+            document.getElementById('costSun').innerText = state.costSun;
+
+            // 진행도 바 업데이트
+            const totalPercent = Math.min(100, state.days + (state.dayProgress / 100));
+            document.getElementById('progressBar').style.width = `${totalPercent}%`;
+
+            // 버튼 활성화/비활성화 체크
+            document.getElementById('btnWater').disabled = state.energy < state.costWater;
+            document.getElementById('btnSun').disabled = state.energy < state.costSun;
+        }
+
+        // 플로팅 텍스트 생성 (클릭 피드백)
+        function showFloatingText(x, y, text, color = '#DB2777') {
+            const el = document.createElement('div');
+            el.className = 'floating-text text-sm sm:text-base';
+            el.style.left = `${x}px`;
+            el.style.top = `${y}px`;
+            el.style.color = color;
+            el.innerText = text;
+            container.appendChild(el);
+            setTimeout(() => el.remove(), 800);
+        }
+
+        // 성장 진행 로직
+        function addGrowth(amount, energyGain) {
+            state.energy += energyGain;
+            state.dayProgress += amount;
+
+            while (state.dayProgress >= 100) {
+                state.dayProgress -= 100;
+                if (state.days < 100) {
+                    state.days += 1;
+                    // 새로운 꽃 1송이 팡! 터지며 잎사귀 흩날림
+                    spawnPetals(3);
+                } else {
+                    state.days = 100;
+                    state.dayProgress = 0;
+                    break;
+                }
+            }
+
+            // 100일 달성 체크
+            if (state.days >= 100 && !state.isCleared) {
+                state.isCleared = true;
+                const elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+                document.getElementById('clearTime').innerText = elapsed;
+                document.getElementById('clearClicks').innerText = state.totalClicks;
+                spawnPetals(40);
+                setTimeout(() => toggleModal('clearModal', true), 600);
+            }
+
+            updateUI();
+        }
+
+        // 꽃잎 파티클 생성
+        function spawnPetals(count) {
+            const rect = container.getBoundingClientRect();
+            const colors = ['#FF69B4', '#FFB6C1', '#FF1493', '#FFC0CB'];
+            for (let i = 0; i < count; i++) {
+                fallingPetals.push({
+                    x: rect.width * (0.3 + Math.random() * 0.4),
+                    y: rect.height * (0.2 + Math.random() * 0.3),
+                    vx: (Math.random() - 0.5) * 2,
+                    vy: 1 + Math.random() * 1.5,
+                    size: 4 + Math.random() * 4,
+                    angle: Math.random() * Math.PI * 2,
+                    vAngle: (Math.random() - 0.5) * 0.1,
+                    color: colors[Math.floor(Math.random() * colors.length)]
+                });
+            }
+        }
+
+        // 물방울 파티클 생성
+        function spawnWaterDrops() {
+            const rect = container.getBoundingClientRect();
+            for (let i = 0; i < 25; i++) {
+                waterDrops.push({
+                    x: rect.width * (0.25 + Math.random() * 0.5),
+                    y: rect.height * 0.1 - Math.random() * 100,
+                    vy: 5 + Math.random() * 4,
+                    size: 3 + Math.random() * 3
+                });
+            }
+        }
+
+        // 캔버스 클릭/터치 이벤트 핸들러 (간지럼 태우기!)
+        function handleTreeInteract(e) {
+            e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
+            let clientX, clientY;
+
+            if (e.touches && e.touches.length > 0) {
+                clientX = e.touches[0].clientX;
+                clientY = e.touches[0].clientY;
+            } else {
+                clientX = e.clientX;
+                clientY = e.clientY;
+            }
+
+            const x = clientX - rect.left;
+            const y = clientY - rect.top;
+
+            // 첫 클릭 시 힌트 숨김
+            const hint = document.getElementById('hintBadge');
+            if (hint) hint.style.opacity = '0';
+
+            state.totalClicks++;
+            // 배롱나무 간지럼 효과 (나무가 파르르 흔들림)
+            state.treeShake = 1.0;
+
+            // 성장 및 정성 획득
+            addGrowth(25, 2);
+            spawnPetals(2);
+
+            const messages = ['간질간질! 🌸', '+2 정성 ✨', '활짝! 💖', '파르르~ 🌿'];
+            const msg = messages[Math.floor(Math.random() * messages.length)];
+            showFloatingText(x - 20, y - 20, msg);
+        }
+
+        canvas.addEventListener('mousedown', handleTreeInteract);
+        canvas.addEventListener('touchstart', handleTreeInteract, { passive: false });
+
+        // 스킬 사용 함수
+        function useSkill(type) {
+            const rect = container.getBoundingClientRect();
+            if (type === 'water' && state.energy >= state.costWater) {
+                state.energy -= state.costWater;
+                state.costWater = Math.floor(state.costWater * 1.15);
+                spawnWaterDrops();
+                addGrowth(350, 0); // 한 번에 약 3.5일 성장!
+                showFloatingText(rect.width / 2 - 40, rect.height / 2, '시원한 단비! +3.5일 💧', '#0284C7');
+            } else if (type === 'sun' && state.energy >= state.costSun) {
+                state.energy -= state.costSun;
+                state.sunLevel += 1;
+                state.costSun = Math.floor(state.costSun * 1.4);
+                showFloatingText(rect.width / 2 - 40, rect.height / 2, `햇빛 Lv.${state.sunLevel} 업! ☀️`, '#D97706');
+            }
+            updateUI();
+        }
+
+        // 모달 열기/닫기
+        function toggleModal(modalId, show) {
+            const modal = document.getElementById(modalId);
+            if (show) {
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+            }
+        }
+
+        // 게임 리셋
+        function resetGame() {
+            state = {
+                days: 0,
+                dayProgress: 0,
+                energy: 10,
+                sunLevel: 0,
+                costWater: 15,
+                costSun: 30,
+                totalClicks: 0,
+                startTime: Date.now(),
+                isCleared: false,
+                treeShake: 0,
+                windOffset: 0
+            };
+            initFlowers();
+            fallingPetals = [];
+            toggleModal('clearModal', false);
+            updateUI();
+        }
+
+        // 1초마다 자동 성장 (햇빛 레벨 비례)
+        setInterval(() => {
+            if (state.sunLevel > 0) {
+                addGrowth(state.sunLevel * 12, state.sunLevel * 1);
+            }
+        }, 1000);
+
+        // ==========================================
+        // 그리기(렌더링) 함수들
+        // ==========================================
+
+        function drawBackground(w, h) {
+            // 햇살 효과 (햇빛 레벨이 높을수록 밝게 빛남)
+            if (state.sunLevel > 0) {
+                const sunX = w * 0.85;
+                const sunY = h * 0.15;
+                const grad = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, 120 + state.sunLevel * 15);
+                grad.addColorStop(0, 'rgba(255, 250, 200, 0.9)');
+                grad.addColorStop(0.4, 'rgba(255, 220, 100, 0.3)');
+                grad.addColorStop(1, 'rgba(255, 220, 100, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(sunX, sunY, 120 + state.sunLevel * 15, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // 구름 그리기
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
+            clouds.forEach(c => {
+                c.x += c.speed;
+                if (c.x > w + 100) c.x = -100;
+
+                ctx.beginPath();
+                ctx.arc(c.x, c.y, 25 * c.scale, 0, Math.PI * 2);
+                ctx.arc(c.x + 20 * c.scale, c.y - 10 * c.scale, 30 * c.scale, 0, Math.PI * 2);
+                ctx.arc(c.x + 45 * c.scale, c.y, 22 * c.scale, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // 언덕 (잔디밭)
+            const groundY = h * 0.78;
+            ctx.fillStyle = '#6B8E23';
+            ctx.beginPath();
+            ctx.ellipse(w * 0.5, groundY + 60, w * 0.75, 90, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 나무 아래 떨어진 분홍 꽃잎 카펫 (개화 일수에 비례해 풍성해짐)
+            if (state.days > 5) {
+                const carpetRadius = Math.min(140, state.days * 1.4);
+                ctx.fillStyle = 'rgba(255, 105, 180, 0.45)';
+                ctx.beginPath();
+                ctx.ellipse(w * 0.5, groundY + 12, carpetRadius, 22, 0, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+        function drawTree(w, h) {
+            const baseX = w * 0.5;
+            const baseY = h * 0.80;
+            const scale = Math.min(w, h) * 0.85;
+
+            // 간지럼 흔들림 + 바람 흔들림 계산
+            state.windOffset += 0.03;
+            const shakeAngle = Math.sin(Date.now() * 0.05) * state.treeShake * 0.06;
+            const windAngle = Math.sin(state.windOffset) * 0.015;
+            if (state.treeShake > 0) {
+                state.treeShake = Math.max(0, state.treeShake - 0.04);
+            }
+
+            ctx.save();
+            ctx.translate(baseX, baseY);
+            ctx.rotate(shakeAngle + windAngle);
+
+            // 배롱나무 특유의 매끄럽고 붉은빛이 도는 연갈색 줄기 (곡선미 강조)
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // 나무 그림자
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.15)';
+            ctx.beginPath();
+            ctx.ellipse(0, 5, 55, 12, 0, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 메인 줄기 (S자 곡선)
+            ctx.strokeStyle = '#A0785A';
+            ctx.lineWidth = scale * 0.065;
+            ctx.beginPath();
+            ctx.moveTo(0, 0);
+            ctx.bezierCurveTo(-scale * 0.06, -scale * 0.15, scale * 0.07, -scale * 0.28, 0, -scale * 0.42);
+            ctx.stroke();
+
+            // 줄기 하이라이트 (매끄러운 껍질 표현)
+            ctx.strokeStyle = '#C49A76';
+            ctx.lineWidth = scale * 0.02;
+            ctx.beginPath();
+            ctx.moveTo(-scale * 0.01, -scale * 0.03);
+            ctx.bezierCurveTo(-scale * 0.05, -scale * 0.15, scale * 0.05, -scale * 0.28, -scale * 0.01, -scale * 0.40);
+            ctx.stroke();
+
+            // 주요 가지들 그리기
+            const branches = [
+                { sx: -0.01, sy: -0.25, cx: -0.12, cy: -0.32, ex: -0.22, ey: -0.26, lw: 0.03 },
+                { sx: 0.02, sy: -0.27, cx: 0.12, cy: -0.34, ex: 0.21, ey: -0.25, lw: 0.03 },
+                { sx: -0.02, sy: -0.34, cx: -0.15, cy: -0.42, ex: -0.28, ey: -0.35, lw: 0.025 },
+                { sx: 0.02, sy: -0.35, cx: 0.16, cy: -0.43, ex: 0.27, ey: -0.34, lw: 0.025 },
+                { sx: 0, sy: -0.38, cx: -0.10, cy: -0.48, ex: -0.18, ey: -0.46, lw: 0.022 },
+                { sx: 0, sy: -0.39, cx: 0.10, cy: -0.48, ex: 0.19, ey: -0.45, lw: 0.022 },
+                { sx: 0, sy: -0.40, cx: -0.02, cy: -0.48, ex: 0, ey: -0.52, lw: 0.02 }
+            ];
+
+            ctx.strokeStyle = '#966F52';
+            branches.forEach(b => {
+                ctx.lineWidth = scale * b.lw;
+                ctx.beginPath();
+                ctx.moveTo(b.sx * scale, b.sy * scale);
+                ctx.quadraticCurveTo(b.cx * scale, b.cy * scale, b.ex * scale, b.ey * scale);
+                ctx.stroke();
+            });
+
+            // 초록 잎사귀 무리 (배경 잎)
+            ctx.fillStyle = '#3B7A57';
+            branchTips.forEach(tip => {
+                ctx.beginPath();
+                ctx.arc(tip.rx * scale, tip.ry * scale, scale * 0.075, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            ctx.fillStyle = '#4F9D69';
+            branchTips.forEach((tip, idx) => {
+                if (idx % 2 === 0) {
+                    ctx.beginPath();
+                    ctx.arc((tip.rx + 0.02) * scale, (tip.ry - 0.02) * scale, scale * 0.06, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            // 배롱나무 꽃송이 그리기 (개화 일수에 따라 0 ~ 100송이 개화)
+            const activeCount = Math.min(100, Math.floor(state.days));
+            for (let i = 0; i < 100; i++) {
+                const f = flowers[i];
+                const fx = f.rx * scale;
+                const fy = f.ry * scale;
+
+                if (i < activeCount) {
+                    // 개화된 꽃 (부드럽게 커지는 애니메이션)
+                    f.bloomScale = Math.min(1, f.bloomScale + 0.08);
+                    const r = f.size * f.bloomScale * (scale / 380);
+
+                    // 주름진 꽃송이 표현 (여러 개의 작은 원 겹치기)
+                    ctx.fillStyle = f.color;
+                    for (let p = 0; p < 5; p++) {
+                        const a = (p / 5) * Math.PI * 2 + f.phase;
+                        ctx.beginPath();
+                        ctx.arc(fx + Math.cos(a) * (r * 0.45), fy + Math.sin(a) * (r * 0.45), r * 0.65, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                    // 꽃 중심 밝은 하이라이트
+                    ctx.fillStyle = '#FFE4E1';
+                    ctx.beginPath();
+                    ctx.arc(fx, fy, r * 0.25, 0, Math.PI * 2);
+                    ctx.fill();
+                } else {
+                    // 아직 피지 않은 작은 꽃봉오리
+                    ctx.fillStyle = '#8FBC8F';
+                    ctx.beginPath();
+                    ctx.arc(fx, fy, 3 * (scale / 380), 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            ctx.restore();
+        }
+
+        function drawParticles(w, h) {
+            // 흩날리는 꽃잎
+            for (let i = fallingPetals.length - 1; i >= 0; i--) {
+                const p = fallingPetals[i];
+                p.x += p.vx + Math.sin(p.angle) * 0.5;
+                p.y += p.vy;
+                p.angle += p.vAngle;
+
+                ctx.save();
+                ctx.translate(p.x, p.y);
+                ctx.rotate(p.angle);
+                ctx.fillStyle = p.color;
+                ctx.beginPath();
+                ctx.ellipse(0, 0, p.size, p.size * 0.6, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.restore();
+
+                if (p.y > h * 0.85) {
+                    fallingPetals.splice(i, 1);
+                }
+            }
+
+            // 물방울 효과
+            ctx.fillStyle = '#38BDF8';
+            for (let i = waterDrops.length - 1; i >= 0; i--) {
+                const d = waterDrops[i];
+                d.y += d.vy;
+
+                ctx.beginPath();
+                ctx.arc(d.x, d.y, d.size, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (d.y > h * 0.8) {
+                    waterDrops.splice(i, 1);
+                }
+            }
+        }
+
+        // 메인 애니메이션 루프
+        function gameLoop() {
+            const rect = container.getBoundingClientRect();
+            const w = rect.width;
+            const h = rect.height;
+
+            ctx.clearRect(0, 0, w, h);
+
+            drawBackground(w, h);
+            drawTree(w, h);
+            drawParticles(w, h);
+
+            requestAnimationFrame(gameLoop);
+        }
+
+        // 윈도우 로드 시 게임 시작
+        window.onload = function () {
+            resizeCanvas();
+            initFlowers();
+            updateUI();
+            gameLoop();
+        };
+    </script>
+</body>
+</html>
